@@ -1,0 +1,33 @@
+# Dependencies and build artifacts
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editor and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets: nothing with real values belongs in this repository
+.env
+.env.*
+*.secret
+*.key
+*credentials*.json
+
+# Harness output belongs outside this repository (checks directory), not here.
+# NOTE: these patterns also silently drop evidence files a seat might write by these
+# names inside the repository. That is intended; keep evidence outside stage folders.
+report.json
+verification-*/
+VERIFICATION.md
+*.zip
+
+# Operator scratch
+scratch/
+tmp/
