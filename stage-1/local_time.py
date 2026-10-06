@@ -73,6 +73,35 @@ def closing_instant(local: datetime, tz: ZoneInfo):
     fail()
 
 
+@lru_cache(maxsize=1024)
+def slot_grid(timezone_name: str, year: int, month: int, day: int, opening: int, closing: int, step: int, duration: int):
+    """Bookable slots of one opening window, independent of bookings.
+
+    Returns (starts_at_local, start, end, starts_at) tuples with UTC instants.
+    Depends only on immutable restaurant configuration values and the date, so it
+    is memoized; any failure raises and is not cached.
+    """
+    tz = zone(timezone_name)
+    close = closing_instant(datetime(year, month, day, closing // 60, closing % 60), tz)
+    slots = []
+    for wall in range(opening, closing, step):
+        local = datetime(year, month, day, wall // 60, wall % 60)
+        start = resolve(local, tz)
+        if start is None:
+            continue
+        try:
+            end = start + timedelta(minutes=duration)
+        except OverflowError:
+            continue
+        if end > close:
+            continue
+        # iso() of both ends is kept for its range validation.
+        starts_at = iso(start, tz)
+        iso(end, tz)
+        slots.append((local.isoformat(timespec="minutes"), start, end, starts_at))
+    return tuple(slots)
+
+
 def iso(instant: datetime, tz=UTC):
     try:
         return instant.astimezone(tz).isoformat(timespec="seconds")
@@ -80,15 +109,26 @@ def iso(instant: datetime, tz=UTC):
         fail()
 
 
-def timestamp(value):
-    string(value)
-    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2}(?::[0-9]{2})?)", value):
+TIMESTAMP_PATTERN = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2}(?::[0-9]{2})?)")
+
+
+@lru_cache(maxsize=65536)
+def _parsed_timestamp(value: str):
+    # Stored timestamps are immutable strings, so their parsed UTC instant is
+    # memoized; datetimes are immutable and safe to share between threads.
+    # Invalid input raises and is therefore never cached.
+    if not TIMESTAMP_PATTERN.fullmatch(value):
         fail()
     try:
         result = datetime.fromisoformat(value.replace("Z", "+00:00"))
         return result.astimezone(UTC)
     except (ValueError, OverflowError):
         fail()
+
+
+def timestamp(value):
+    string(value)
+    return _parsed_timestamp(value)
 
 
 def interval(restaurant: dict, table_id: str, start_local: str, party: int):

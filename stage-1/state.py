@@ -142,7 +142,8 @@ def fixture(raw: dict):
             address = email(item["email"])
             name = string(item["display_name"])
             password = string(item["password"])
-            if len(password) < 8 or uid in result["users"] or address in addresses:
+            # The 8-character minimum is a signup rule; fixture passwords may be any non-empty string.
+            if uid in result["users"] or address in addresses:
                 fail()
             addresses.add(address)
             result["users"][uid] = {"id": uid, "email": address, "display_name": name}

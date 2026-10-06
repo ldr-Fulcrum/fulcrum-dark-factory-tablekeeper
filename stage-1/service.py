@@ -1,13 +1,14 @@
 """Stage 1 HTTP behavior; all booking transactions run under one state lock."""
 import re
 import secrets
+from bisect import bisect_left
 import threading
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from errors import email, fail, integer, required, string
 from json_value import canonical
-from local_time import UTC, WEEKDAYS, calendar_day, closing_instant, iso, minutes, resolve, timestamp, zone
+from local_time import UTC, WEEKDAYS, calendar_day, closing_instant, iso, minutes, resolve, slot_grid, timestamp, zone
 from state import booking_values, clone_json, empty_state, fixture, import_state, occupancy, overlap, password_hash, password_matches, public
 
 AMEND_FIELDS = ("table_id", "starts_at_local", "party_size")
@@ -88,6 +89,10 @@ class Service:
             return 204, None
         if path in ("/auth/signup", "/auth/login"):
             return self.auth(path, body)
+        if path == "/availability":
+            # Availability takes only a short read snapshot under the lock and
+            # computes slots outside it, so it never holds up booking writes.
+            return 200, self.availability(parse_qs(parsed.query, keep_blank_values=True))
         with self.lock:
             uid = self.authenticate(authorization) if protected else None
             if path == "/health":
@@ -100,8 +105,6 @@ class Service:
                 if len(identifier) > 64 or identifier not in self.state["restaurants"]:
                     fail(404, "not_found")
                 return 200, clone_json(self.state["restaurants"][identifier])
-            if path == "/availability":
-                return 200, self.availability(parse_qs(parsed.query, keep_blank_values=True))
             if path == "/reservations" and method == "GET":
                 rows = [b for b in self.state["reservations"].values() if b["user_id"] == uid]
                 rows.sort(key=lambda b: (timestamp(b["starts_at"]), b["_order"]), reverse=True)
@@ -130,7 +133,9 @@ class Service:
         required(body, ("email", "password", "display_name") if path == "/auth/signup" else ("email", "password"))
         address = email(body["email"])
         password = string(body["password"])
-        if len(password) < 8:
+        # The 8-character minimum applies when a password is chosen (signup), not at
+        # login, so seeded accounts with shorter fixture passwords can sign in.
+        if path == "/auth/signup" and len(password) < 8:
             fail()
         if path == "/auth/signup":
             name = string(body["display_name"])
@@ -186,6 +191,12 @@ class Service:
     def idempotent(self, uid, path, key, body, operation):
         if not key:
             fail(400, "missing_idempotency_key")
+        # HTTP header values arrive decoded as ISO-8859-1; count characters after
+        # decoding the original bytes as UTF-8 (raw string if not valid UTF-8).
+        try:
+            key = key.encode("latin-1").decode("utf-8")
+        except UnicodeError:
+            pass
         if len(key) > 255:
             fail()
         stored_body = canonical(body)
@@ -260,32 +271,44 @@ class Service:
             fail()
         party = int(values["party_size"])
         integer(party)
-        restaurant = self.state["restaurants"].get(rid)
-        if restaurant is None:
-            fail(404, "not_found")
+        with self.lock:
+            # Consistent snapshot: restaurant records are never mutated in place, and the
+            # confirmed intervals are copied while no write can be half-applied.
+            restaurant = self.state["restaurants"].get(rid)
+            if restaurant is None:
+                fail(404, "not_found")
+            confirmed = [(b["table_id"], b["starts_at"], b["ends_at"]) for b in self.state["reservations"].values()
+                         if b["restaurant_id"] == rid and b["status"] == "confirmed"]
         result = {"restaurant_id": rid, "date": values["date"], "timezone": restaurant["timezone"], "slots": []}
         hours = next((h for h in restaurant["opening_hours"] if h["weekday"] == WEEKDAYS[day.weekday()]), None)
         if hours is None:
             return result
-        tz = zone(restaurant["timezone"])
-        closing = minutes(hours["closes"])
-        close = closing_instant(datetime(day.year, day.month, day.day, closing // 60, closing % 60), tz)
-        confirmed = [b for b in self.state["reservations"].values() if b["restaurant_id"] == rid and b["status"] == "confirmed"]
-        for wall in range(minutes(hours["opens"]), closing, restaurant["slot_minutes"]):
-            local = datetime(day.year, day.month, day.day, wall // 60, wall % 60)
-            start = resolve(local, tz)
-            if start is None:
-                continue
-            try:
-                end = start + timedelta(minutes=restaurant["reservation_duration_minutes"])
-            except OverflowError:
-                continue
-            if end > close:
-                continue
-            interval_values = {"restaurant_id": rid, "starts_at": iso(start, tz), "ends_at": iso(end, tz)}
+        # Occupancy per table: starts sorted, with the running maximum of ends, so a
+        # slot [start, end) is taken iff some booking starting before `end` ends after `start`.
+        busy = {}
+        for table_id, starts_at, ends_at in confirmed:
+            busy.setdefault(table_id, []).append((timestamp(starts_at), timestamp(ends_at)))
+        index = {}
+        for table_id, intervals in busy.items():
+            intervals.sort(key=lambda pair: pair[0])
+            starts, max_ends, latest = [], [], None
+            for other_start, other_end in intervals:
+                latest = other_end if latest is None or other_end > latest else latest
+                starts.append(other_start)
+                max_ends.append(latest)
+            index[table_id] = (starts, max_ends)
+        grid = slot_grid(restaurant["timezone"], day.year, day.month, day.day, minutes(hours["opens"]), minutes(hours["closes"]),
+                         restaurant["slot_minutes"], restaurant["reservation_duration_minutes"])
+        for starts_at_local, start, end, starts_at in grid:
             table_ids = []
             for table in restaurant["tables"]:
-                if table["capacity"] >= party and not any(overlap({**interval_values, "table_id": table["id"]}, other) for other in confirmed):
-                    table_ids.append(table["id"])
-            result["slots"].append({"starts_at_local": local.isoformat(timespec="minutes"), "starts_at": iso(start, tz), "available_table_ids": table_ids})
+                if table["capacity"] < party:
+                    continue
+                taken = index.get(table["id"])
+                if taken is not None:
+                    before_end = bisect_left(taken[0], end)
+                    if before_end and taken[1][before_end - 1] > start:
+                        continue
+                table_ids.append(table["id"])
+            result["slots"].append({"starts_at_local": starts_at_local, "starts_at": starts_at, "available_table_ids": table_ids})
         return result
