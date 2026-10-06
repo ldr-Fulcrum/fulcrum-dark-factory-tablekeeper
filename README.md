@@ -4,7 +4,7 @@ WeAreDevelopers × BAND Dark Factory, hackathon edition. Submission for the **ta
 
 ## Team
 
-Fulcrum Fortress Consulting. `[TEAM: list the human participants' names or handles]`
+Fulcrum Fortress Consulting. Team / factory name: **Dark Fulcrum Force**.
 
 ## How to read this repository
 
