@@ -14,7 +14,7 @@ Human participant: **Larry Ross (LDR)**.
 |---|---|
 | `FACTORY.md` | How the factory works, the choices behind it, what it cost, what it caught, and its limits |
 | `mandates/` | One standing instruction file per seat, each starting with the harness and model that seat runs |
-| `room.json` | The full BAND room export, unmodified except for `[REDACTED]` where a credential shape was found |
+| `room.json` | The full-session download of the run room, with four tool-result bodies replaced by a redaction notice because they quoted private workspace files. Nothing else was changed. |
 | `stage-1/` | Stage 1 service. Build and run it by following `stage-1/RUN.md` |
 
 Only completed stages are included. Add `stage-2/` and later folders here only if they were completed and pass their own checks.
