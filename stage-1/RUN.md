@@ -6,6 +6,14 @@ From the repository root, run this single PowerShell command:
 docker build -t hammer-stage-1 ./stage-1; if ($LASTEXITCODE -eq 0) { docker run --rm --cpus 2 --memory 2g -e PORT=8080 -p 8080:8080 hammer-stage-1 }
 ```
 
+In bash or another POSIX shell, run this equivalent single command from the repository root:
+
+```bash
+docker build -t hammer-stage-1 ./stage-1 && docker run --rm --cpus 2 --memory 2g -e PORT=8080 -p 8080:8080 hammer-stage-1
+```
+
+_Added by operator for cross-shell convenience; the band's PowerShell line above is unchanged._
+
 The service listens on `0.0.0.0:$PORT` (default 8080). Health is `GET /health`.
 The container contains Python and IANA tzdata and requires no outbound access
 or external services at runtime. State starts empty; `POST /_test/reset` seeds it.
