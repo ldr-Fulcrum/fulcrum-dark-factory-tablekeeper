@@ -6,6 +6,8 @@ WeAreDevelopers × BAND Dark Factory, hackathon edition. Submission for the **ta
 
 Fulcrum Fortress Consulting. Team / factory name: **Dark Fulcrum Force**.
 
+Human participant: **Larry Ross (LDR)**.
+
 ## How to read this repository
 
 | Path | What it is |
@@ -21,12 +23,12 @@ Only completed stages are included. Add `stage-2/` and later folders here only i
 
 | Seat | Harness | Model |
 |---|---|---|
-| FORGE | Claude Code | `[FILL FROM BAND]` |
-| HAMMER | Codex | `[FILL FROM BAND]` |
-| ANVIL | Claude Code | `[FILL FROM BAND]` |
-| PROBE | Codex | `[FILL FROM BAND]` |
-| CONTRA | Claude Code | `[FILL FROM BAND]` |
-| WARDEN | Claude Code | `[FILL FROM BAND]` |
+| FORGE | Claude Code | `claude-opus-5-5` |
+| HAMMER | Codex | `gpt-6.1-sol` |
+| ANVIL | Claude Code | `claude-opus-5-5` |
+| PROBE | Codex | `gpt-6.1-sol` |
+| CONTRA | Claude Code | `claude-opus-5-5` |
+| WARDEN | Claude Code | `claude-sonnet-5-5` |
 
 ## Running a stage
 
